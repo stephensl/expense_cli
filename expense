@@ -2,6 +2,7 @@
 
 require "pg"
 require "Date"
+require "io/console"
 
 
 class ExpenseData
@@ -41,9 +42,17 @@ class ExpenseData
     end 
   end 
 
+  def clear_expenses
+    if confirm_clear?
+      @connection.exec("DELETE FROM expenses;")
+      puts "All expenses have been deleted."
+    end
+  end 
+
   private
 
   def display_expenses(expenses)
+    count_expenses(expenses)
     expenses.each do |tuple|
       columns = [ tuple["id"].rjust(3),
                   tuple["created_on"].rjust(10),
@@ -53,6 +62,32 @@ class ExpenseData
       puts columns.join(" | ")
     end 
   end 
+
+  def count_expenses(expenses)
+    num_of_expenses = expenses.ntuples
+
+    case num_of_expenses
+    when 0
+      puts "There are no expenses."
+    when 1 
+      puts "There is 1 expense."
+    else 
+      puts "There are #{num_of_expenses} expenses."
+    end 
+  end 
+
+  def total_expense_amount(expenses)
+    total = @connection.exec("SELECT SUM(amount) FROM expenses")
+
+  end 
+
+  def confirm_clear?
+    puts "This will remove all expenses. Are you sure? (y/n)"
+    choice = STDIN.getch
+
+    choice.downcase == 'y' ? true : false 
+  end 
+  
 end 
 
 class CLI
@@ -77,6 +112,8 @@ class CLI
       @application.delete_expense(expense_id)
     when "list"
       @application.list_expenses
+    when "clear"
+      @application.clear_expenses
     else 
       display_help 
     end 
