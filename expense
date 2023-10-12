@@ -7,12 +7,14 @@ require "io/console"
 
 class ExpenseData
   def initialize
-    @connection = PG.connect(dbname: "finance", user: "postgres", password: "password")
+    @connection = PG.connect(dbname: "expenses")
+    setup_schema
   end 
 
   def list_expenses
     result = @connection.exec("SELECT * FROM expenses ORDER BY created_on;")
-    display_expenses(result)
+    display_count(result)
+    display_expenses(result) if result.ntuples > 0
   end 
   
   def add_expense(amount, memo)
@@ -24,7 +26,8 @@ class ExpenseData
   def find_expense(search_term)
     sql = ("SELECT * FROM expenses WHERE memo ILIKE $1")
     result = @connection.exec_params(sql, ["%#{search_term}%"])
-    display_expenses(result)
+    display_count(result)
+    display_expenses(result) if result.ntuples > 0
   end 
 
   def delete_expense(expense_id)
@@ -51,8 +54,33 @@ class ExpenseData
 
   private
 
+  def setup_schema
+    result = @connection.exec <<~SQL
+      SELECT COUNT(*) FROM information_schema.tables 
+      WHERE table_schema = 'public' AND table_name = 'expenses';
+    SQL
+
+    build_schema unless result[0]['count'].to_i == 1 
+  end 
+
+  def build_schema
+    sql = File.read('schema.sql')
+    @connection.exec(sql)
+  end 
+
+  def display_count(expenses)
+    count = expenses.ntuples
+
+    if count == 0
+      puts "There are no expenses."
+    elsif count == 1 
+      puts "There is 1 expense."
+    else 
+      puts "There are #{count} expenses."
+    end 
+  end 
+
   def display_expenses(expenses)
-    count_expenses(expenses)
     expenses.each do |tuple|
       columns = [ tuple["id"].rjust(3),
                   tuple["created_on"].rjust(10),
@@ -61,24 +89,12 @@ class ExpenseData
   
       puts columns.join(" | ")
     end 
-  end 
+      
+    puts "-" * 50
 
-  def count_expenses(expenses)
-    num_of_expenses = expenses.ntuples
+    amount_sum = expenses.field_values("amount").map(&:to_f).inject(:+)
 
-    case num_of_expenses
-    when 0
-      puts "There are no expenses."
-    when 1 
-      puts "There is 1 expense."
-    else 
-      puts "There are #{num_of_expenses} expenses."
-    end 
-  end 
-
-  def total_expense_amount(expenses)
-    total = @connection.exec("SELECT SUM(amount) FROM expenses")
-
+    puts "Total: #{format('%.2f', amount_sum.to_s).rjust(25)}"
   end 
 
   def confirm_clear?
@@ -87,7 +103,6 @@ class ExpenseData
 
     choice.downcase == 'y' ? true : false 
   end 
-  
 end 
 
 class CLI
